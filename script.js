@@ -1,4 +1,4 @@
-    const { useState, useEffect, useMemo, useRef } = React;
+       const { useState, useEffect, useMemo, useRef } = React;
 
         const kebabToPascal = (str) =>
             str.replace(/-([a-z0-9])/g, (g) => g[1].toUpperCase())
@@ -50,7 +50,7 @@
         // --- CONSTANTS ---
         const MACRO_URL = "https://script.google.com/macros/s/AKfycbx5Go-UGIcQvyA3vefhhl5Rc6-930cG9LsCRb1JPKzTHN5dNfBUCsD063K5RCyANGplEA/exec";
         
-        // Retificações
+        // NOVO URL CONFIGURADO PARA RETIFICAÇÕES:
         const MACRO_RETIFICACAO_URL = "https://script.google.com/macros/s/AKfycbxQ2j9RCT2c4LNs0pYRxMJoEu_m-rw_zfG-15Q15qt4KQ9fxdyrvxp5gXbdONUmFoeAqg/exec";
         
         // Configurações de API do Cloudflare Worker
@@ -222,10 +222,8 @@
             }
         };
 
-        // --- ATUALIZAÇÃO: Função Ajustada para as Retificações ---
         const postRectificationToSheet = async (dataPayload) => {
             try {
-                // Adicionamos a GID requerida para que o Macro garanta a inserção na aba correta.
                 const body = { action: "append_row", gid: "240140981", data: dataPayload };
                 const response = await fetch(MACRO_RETIFICACAO_URL, {
                     method: 'POST',
@@ -276,7 +274,8 @@
             </div>
         );
 
-        const ClassFeedbackForm = ({ professor, initialClassId, initialStudent, addToast }) => {
+        // --- ATUALIZAÇÃO 2: Form aceita os props para pré-selecionar o status vindo da Correção ---
+        const ClassFeedbackForm = ({ professor, initialClassId, initialStartTime, initialStudent, initialVerdict, initialScore, initialComments, addToast }) => {
             const [selectedType, setSelectedType] = useState(CLASS_TYPES_FEEDBACK[0]);
             const [isDropdownOpen, setIsDropdownOpen] = useState(false);
             const [isAdminActivity, setIsAdminActivity] = useState(false);
@@ -305,27 +304,34 @@
                     }
                 }
                 if (initialStudent) setStudents(initialStudent);
-            }, [initialClassId, initialStudent]);
+                if (initialStartTime) setStartTime(initialStartTime);
+            }, [initialClassId, initialStudent, initialStartTime]);
 
             useEffect(() => {
                 if (studentList.length > 0) {
                     setVerdicts(prev => {
                         const next = { ...prev };
-                        studentList.forEach(s => { if (!next[s]) next[s] = 'Aprovado'; });
+                        studentList.forEach(s => { 
+                            if (!next[s]) next[s] = (s === initialStudent && initialVerdict) ? initialVerdict : 'Aprovado'; 
+                        });
                         return next;
                     });
                     setIndividualScores(prev => {
                         const next = { ...prev };
-                        studentList.forEach(s => { if (next[s] === undefined) next[s] = (isAdminActivity ? 'Sim' : '0'); });
+                        studentList.forEach(s => { 
+                            if (next[s] === undefined) next[s] = (s === initialStudent && initialScore) ? initialScore : (isAdminActivity ? 'Sim' : '0'); 
+                        });
                         return next;
                     });
                     setIndividualComments(prev => {
                         const next = { ...prev };
-                        studentList.forEach(s => { if (next[s] === undefined) next[s] = ''; });
+                        studentList.forEach(s => { 
+                            if (next[s] === undefined) next[s] = (s === initialStudent && initialComments) ? initialComments : ''; 
+                        });
                         return next;
                     });
                 }
-            }, [studentList, isAdminActivity]);
+            }, [studentList, isAdminActivity, initialStudent, initialVerdict, initialScore, initialComments]);
 
             useEffect(() => {
                 const handleClickOutside = (event) => {
@@ -1264,7 +1270,7 @@
                                 {selectedType.id === 'admin' ? (
                                     <div className="space-y-2 sm:space-y-3">
                                         <label className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block">Tipo de Material</label>
-                                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-center sm:justify-start gap-2 sm:gap-4 h-auto sm:h-12 md:h-14 py-3 sm:py-0 px-3 sm:px-4 bg-white dark:bg-black/20 border border-slate-200 dark:border-brand/20 rounded-md">
+                                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-center sm:justify-start gap-4 sm:gap-6 h-auto sm:h-12 md:h-14 py-3 sm:py-0 px-3 sm:px-4 bg-white dark:bg-black/20 border border-slate-200 dark:border-brand/20 rounded-md">
                                             <button 
                                                 type="button" 
                                                 onClick={(e) => { e.preventDefault(); setMaterialType('Apostila'); }} 
@@ -1472,13 +1478,14 @@
                 authenticate();
             }, []);
 
+            // --- ATUALIZAÇÃO 3: Ajuste na passagem das Notas (Sim/Não) para coincidir com a Aprovação ---
             const handleNavigateFromCorrection = (data) => {
                 setReportData({
                     classId: 'admin_activity',
                     startTime: new Date(),
                     studentNick: data.nick,
                     verdict: data.approved ? 'Aprovado' : 'Reprovado',
-                    score: 'Sim',
+                    score: data.approved ? 'Sim' : 'Não', // Define Sim ou Não dinamicamente!
                     comments: data.comments
                 });
                 window.location.hash = 'reports'; // Muda via Hyperlink
