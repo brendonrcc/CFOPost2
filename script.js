@@ -1,4 +1,4 @@
-       const { useState, useEffect, useMemo, useRef } = React;
+   const { useState, useEffect, useMemo, useRef } = React;
 
         const kebabToPascal = (str) =>
             str.replace(/-([a-z0-9])/g, (g) => g[1].toUpperCase())
@@ -40,7 +40,6 @@
         const Terminal = (p) => <Icon name="terminal" {...p} />;
         const ClipboardList = (p) => <Icon name="clipboard-list" {...p} />;
         const Eraser = (p) => <Icon name="eraser" {...p} />;
-        const FileText = (p) => <Icon name="file-text" {...p} />;
         const Moon = (p) => <Icon name="moon" {...p} />;
         const Sun = (p) => <Icon name="sun" {...p} />;
         const Edit = (p) => <Icon name="edit" {...p} />;
@@ -50,10 +49,9 @@
         // --- CONSTANTS ---
         const MACRO_URL = "https://script.google.com/macros/s/AKfycbx5Go-UGIcQvyA3vefhhl5Rc6-930cG9LsCRb1JPKzTHN5dNfBUCsD063K5RCyANGplEA/exec";
         
-        // NOVO URL CONFIGURADO PARA RETIFICAÇÕES:
+        // NOVO URL CONFIGURADO PARA RETIFICAÇÕES (ATENÇÃO: Substitua isto pela sua nova URL Web App gerada no Google Apps Script para a planilha 1Xusp1uIBzAgEikHAMVH1L8S5XbNHXskmohCnw4TZbRw):
         const MACRO_RETIFICACAO_URL = "https://script.google.com/macros/s/AKfycbxQ2j9RCT2c4LNs0pYRxMJoEu_m-rw_zfG-15Q15qt4KQ9fxdyrvxp5gXbdONUmFoeAqg/exec";
         
-        // Configurações de API do Cloudflare Worker
         const MACRO_GET_MPS_URL = "https://api-professor-dashboard.brendonhbrcc.workers.dev/?gid=2116872062";
         const MACRO_AUTH_URL = "https://api-professor-dashboard.brendonhbrcc.workers.dev/?gid=1512246214";
 
@@ -65,6 +63,41 @@
             { id: 'mil_career', name: 'Carreira Militar', maxScore: 5 },
             { id: 'practice', name: 'Práticas Militares e Legislação', maxScore: 4 },
         ];
+
+        // --- HOOK DE ROTEAMENTO (Query Params) ---
+        const useQueryParams = () => {
+            const [search, setSearch] = useState(window.location.search);
+
+            useEffect(() => {
+                const handlePopState = () => setSearch(window.location.search);
+                window.addEventListener('popstate', handlePopState);
+                return () => window.removeEventListener('popstate', handlePopState);
+            }, []);
+
+            const searchParams = new URLSearchParams(search);
+
+            const updateParams = (newParams, replace = false) => {
+                const current = new URLSearchParams(window.location.search);
+                let changed = false;
+                Object.keys(newParams).forEach(key => {
+                    const val = newParams[key];
+                    if (val === null || val === undefined) {
+                        if (current.has(key)) { current.delete(key); changed = true; }
+                    } else {
+                        if (current.get(key) !== val) { current.set(key, val); changed = true; }
+                    }
+                });
+                
+                if (changed) {
+                    const newUrl = `${window.location.pathname}?${current.toString()}`;
+                    if (replace) window.history.replaceState({}, '', newUrl);
+                    else window.history.pushState({}, '', newUrl);
+                    setSearch(window.location.search);
+                }
+            };
+
+            return { searchParams, updateParams };
+        };
 
         // --- GLOBAL UTILS ---
         const parseTSVGlobal = (tsv) => {
@@ -80,7 +113,7 @@
                 if (inQuotes) {
                     if (char === '"' && nextChar === '"') {
                         currentCell += '"';
-                        i++; // ignora a segunda aspa (escaped quote)
+                        i++;
                     } else if (char === '"') {
                         inQuotes = false;
                     } else {
@@ -224,6 +257,7 @@
 
         const postRectificationToSheet = async (dataPayload) => {
             try {
+                // Usa o GID da nova planilha onde ficará os registros de retificações
                 const body = { action: "append_row", gid: "240140981", data: dataPayload };
                 const response = await fetch(MACRO_RETIFICACAO_URL, {
                     method: 'POST',
@@ -274,11 +308,21 @@
             </div>
         );
 
-        // --- ATUALIZAÇÃO 2: Form aceita os props para pré-selecionar o status vindo da Correção ---
-        const ClassFeedbackForm = ({ professor, initialClassId, initialStartTime, initialStudent, initialVerdict, initialScore, initialComments, addToast }) => {
-            const [selectedType, setSelectedType] = useState(CLASS_TYPES_FEEDBACK[0]);
+        const ClassFeedbackForm = ({ professor, searchParams, updateParams, initialClassId, initialStartTime, initialStudent, initialVerdict, initialScore, initialComments, addToast }) => {
+            const urlAula = searchParams.get('aula');
+            
+            const [selectedType, setSelectedType] = useState(() => {
+                if (initialClassId && initialClassId !== 'admin_activity') {
+                    return CLASS_TYPES_FEEDBACK.find(t => t.id === initialClassId) || CLASS_TYPES_FEEDBACK[0];
+                }
+                if (urlAula) {
+                    return CLASS_TYPES_FEEDBACK.find(t => t.id === urlAula) || CLASS_TYPES_FEEDBACK[0];
+                }
+                return CLASS_TYPES_FEEDBACK[0];
+            });
+
             const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-            const [isAdminActivity, setIsAdminActivity] = useState(false);
+            const [isAdminActivity, setIsAdminActivity] = useState(initialClassId === 'admin_activity');
             const [students, setStudents] = useState(initialStudent || '');
             const [verdicts, setVerdicts] = useState({});
             const [individualScores, setIndividualScores] = useState({});
@@ -288,24 +332,27 @@
             
             const dropdownRef = useRef(null);
 
+            // Sincroniza estado com URL caso o usuário use botões Voltar/Avançar
+            useEffect(() => {
+                if (urlAula && urlAula !== selectedType.id) {
+                    const found = CLASS_TYPES_FEEDBACK.find(t => t.id === urlAula);
+                    if (found) setSelectedType(found);
+                }
+            }, [urlAula]);
+
+            // Atualiza a URL quando o state muda (replace true para montar inicial)
+            useEffect(() => {
+                updateParams({ aula: selectedType.id }, true);
+            }, [selectedType]);
+
             const studentList = useMemo(() => {
                 if (!students.trim()) return [];
                 return students.split('/').map(s => s.trim()).filter(s => s.length > 0);
             }, [students]);
 
             useEffect(() => {
-                if (initialClassId) {
-                    const type = CLASS_TYPES_FEEDBACK.find(t => t.id === initialClassId) || CLASS_TYPES_FEEDBACK[0];
-                    setSelectedType(type);
-                    if (initialClassId === 'admin_activity') {
-                        const adminType = CLASS_TYPES_FEEDBACK.find(t => t.id === 'admin');
-                        if (adminType) setSelectedType(adminType);
-                        setIsAdminActivity(true);
-                    }
-                }
-                if (initialStudent) setStudents(initialStudent);
                 if (initialStartTime) setStartTime(initialStartTime);
-            }, [initialClassId, initialStudent, initialStartTime]);
+            }, [initialStartTime]);
 
             useEffect(() => {
                 if (studentList.length > 0) {
@@ -342,6 +389,13 @@
                 document.addEventListener("mousedown", handleClickOutside);
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
+
+            const handleTypeSelect = (t) => {
+                setSelectedType(t);
+                setIndividualScores({});
+                if (t.id !== 'admin') setIsAdminActivity(false);
+                setIsDropdownOpen(false);
+            };
 
             const handlePostAndProcess = async () => {
                 if (studentList.length === 0) return addToast('error', 'Erro', "Adicione alunos antes de enviar.");
@@ -462,12 +516,9 @@
                                                         type="button"
                                                         onClick={(e) => {
                                                             e.preventDefault();
-                                                            setSelectedType(t);
-                                                            setIndividualScores({});
-                                                            if (t.id !== 'admin') setIsAdminActivity(false);
-                                                            setIsDropdownOpen(false);
+                                                            handleTypeSelect(t);
                                                         }}
-                                                        className={`block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 text-[11px] sm:text-xs md:text-sm font-bold uppercase transition-colors hover:underline ${
+                                                        className={`block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 text-[11px] sm:text-xs md:text-sm font-bold uppercase transition-colors ${
                                                             selectedType.id === t.id 
                                                                 ? 'bg-brand/10 text-brand dark:bg-brand/20 dark:text-brand-light' 
                                                                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-brand dark:hover:text-brand-light'
@@ -903,8 +954,15 @@
             );
         };
 
-        const RectificationForm = ({ professor, addToast }) => {
-            const [selectedType, setSelectedType] = useState(CLASS_TYPES_FEEDBACK[0]);
+        const RectificationForm = ({ professor, searchParams, updateParams, addToast }) => {
+            const urlAula = searchParams.get('aula');
+            
+            const [selectedType, setSelectedType] = useState(() => {
+                if (urlAula) {
+                    return CLASS_TYPES_FEEDBACK.find(t => t.id === urlAula) || CLASS_TYPES_FEEDBACK[0];
+                }
+                return CLASS_TYPES_FEEDBACK[0];
+            });
             const [isDropdownOpen, setIsDropdownOpen] = useState(false);
             const [rowNumber, setRowNumber] = useState('');
             const [errorText, setErrorText] = useState('');
@@ -912,6 +970,13 @@
             const [isSending, setIsSending] = useState(false);
             
             const dropdownRef = useRef(null);
+
+            useEffect(() => {
+                if (urlAula && urlAula !== selectedType.id) {
+                    const found = CLASS_TYPES_FEEDBACK.find(t => t.id === urlAula);
+                    if (found) setSelectedType(found);
+                }
+            }, [urlAula]);
 
             useEffect(() => {
                 const handleClickOutside = (event) => {
@@ -923,6 +988,12 @@
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
 
+            const handleTypeSelect = (t) => {
+                setSelectedType(t);
+                setIsDropdownOpen(false);
+                updateParams({ aula: t.id }, true);
+            };
+
             const handlePost = async () => {
                 if (!rowNumber.trim() || !errorText.trim() || !correctionText.trim()) {
                     return addToast('error', 'Erro', "Preencha todos os campos antes de enviar.");
@@ -931,6 +1002,7 @@
 
                 try {
                     const payload = [{
+                        "Carimbo de data/hora": new Date().toLocaleString('pt-BR'),
                         "Nickname": professor.nickname,
                         "Aula/Curso": selectedType.name,
                         "Linha da planilha": rowNumber,
@@ -981,10 +1053,9 @@
                                                         type="button"
                                                         onClick={(e) => {
                                                             e.preventDefault();
-                                                            setSelectedType(t);
-                                                            setIsDropdownOpen(false);
+                                                            handleTypeSelect(t);
                                                         }}
-                                                        className={`block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 text-[11px] sm:text-xs md:text-sm font-bold uppercase cursor-pointer transition-colors hover:underline ${
+                                                        className={`block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 text-[11px] sm:text-xs md:text-sm font-bold uppercase cursor-pointer transition-colors ${
                                                             selectedType.id === t.id 
                                                                 ? 'bg-brand/10 text-brand dark:bg-brand/20 dark:text-brand-light' 
                                                                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-brand dark:hover:text-brand-light'
@@ -1062,25 +1133,63 @@
             );
         };
 
-        const MpSenderForm = ({ professor, addToast }) => {
-            const [selectedType, setSelectedType] = useState(CLASS_TYPES_FEEDBACK[0]);
+        const MpSenderForm = ({ professor, searchParams, updateParams, addToast }) => {
+            const urlAula = searchParams.get('aula');
+            const urlTipo = searchParams.get('tipo');
+
+            const [selectedType, setSelectedType] = useState(() => {
+                if (urlAula) {
+                    return CLASS_TYPES_FEEDBACK.find(t => t.id === urlAula) || CLASS_TYPES_FEEDBACK[0];
+                }
+                return CLASS_TYPES_FEEDBACK[0];
+            });
+
             const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-            const [materialType, setMaterialType] = useState('Apostila');
+            
+            const [materialType, setMaterialType] = useState(() => {
+                if (urlAula === 'admin' && urlTipo === 'atividade') return 'Atividade';
+                return 'Apostila';
+            });
+
             const [students, setStudents] = useState('');
             const [isSending, setIsSending] = useState(false);
             
-            // Estado para os templates da base de dados (Macro GET)
             const [templates, setTemplates] = useState([]);
             const [isLoadingTemplates, setIsLoadingTemplates] = useState(true);
             const dropdownRef = useRef(null);
 
+            // Sync URL params for initial changes
             useEffect(() => {
-                if (selectedType.id === 'admin') setMaterialType('Apostila');
-                else if (selectedType.id === 'practice') setMaterialType('Certificado');
-                else if (selectedType.id === 'mil_sci') setMaterialType('Apostila');
-                else if (selectedType.id === 'mil_career') setMaterialType('Apostila');
-                else setMaterialType('');
-            }, [selectedType]);
+                if (urlAula && urlAula !== selectedType.id) {
+                    const found = CLASS_TYPES_FEEDBACK.find(t => t.id === urlAula);
+                    if (found) setSelectedType(found);
+                }
+            }, [urlAula]);
+
+            useEffect(() => {
+                if (selectedType.id === 'admin' && urlTipo) {
+                    const mapped = urlTipo.toLowerCase() === 'atividade' ? 'Atividade' : 'Apostila';
+                    if (materialType !== mapped) {
+                        setMaterialType(mapped);
+                    }
+                }
+            }, [urlTipo, selectedType.id]);
+
+            useEffect(() => {
+                let newType = '';
+                if (selectedType.id === 'admin') {
+                    newType = (urlTipo && urlTipo.toLowerCase() === 'atividade') ? 'Atividade' : 'Apostila';
+                } else if (selectedType.id === 'practice') newType = 'Certificado';
+                else if (selectedType.id === 'mil_sci') newType = 'Apostila';
+                else if (selectedType.id === 'mil_career') newType = 'Apostila';
+
+                setMaterialType(newType);
+                if (newType) {
+                    updateParams({ aula: selectedType.id, tipo: newType.toLowerCase() }, true);
+                } else {
+                    updateParams({ aula: selectedType.id, tipo: null }, true);
+                }
+            }, [selectedType.id]);
 
             useEffect(() => {
                 const handleClickOutside = (event) => {
@@ -1092,7 +1201,6 @@
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
 
-            // Busca os templates ao montar o componente a partir do Worker (TSV Format)
             useEffect(() => {
                 const fetchTemplates = async () => {
                     setIsLoadingTemplates(true);
@@ -1106,27 +1214,24 @@
                             const result = JSON.parse(text);
                             dataToUse = result.data || result.values || result;
                         } catch(e) {
-                            // Se falhar o parse JSON, assume formato TSV gerado pelo worker/google sheets
                             dataToUse = parseTSVGlobal(text);
                         }
 
                         let mapped = [];
                         if (dataToUse.length > 0) {
-                            // Determinar se a primeira linha é cabeçalho ou já é uma TAG válida
                             let startIndex = 0;
                             const validTags = ['ADM', 'ADMATV', 'CM', 'CAM', 'PML'];
                             const firstCell = dataToUse[0][0] ? dataToUse[0][0].toString().trim().toUpperCase() : '';
                             
                             if (firstCell && !validTags.includes(firstCell)) {
-                                startIndex = 1; // Ignora cabeçalho se a A1 não for uma das TAGs conhecidas
+                                startIndex = 1;
                             }
                             
-                            // Mapeia colunas: A (TAG) -> 0, B (Título) -> 1, C (BBCode) -> 2
                             mapped = dataToUse.slice(startIndex).map(row => ({
                                 tag: row[0] ? row[0].toString().trim() : "",
                                 titulo: row[1] ? row[1].toString().trim() : "",
                                 bbcode: row[2] ? row[2].toString() : ""
-                            })).filter(item => item.tag && item.tag.length > 0); // Ignora linhas sem TAG
+                            })).filter(item => item.tag && item.tag.length > 0);
                         }
 
                         if (mapped.length > 0) {
@@ -1144,6 +1249,16 @@
                 fetchTemplates();
             }, []);
 
+            const handleTypeSelect = (t) => {
+                setSelectedType(t);
+                setIsDropdownOpen(false);
+            };
+
+            const handleSetMaterialType = (t) => {
+                setMaterialType(t);
+                updateParams({ tipo: t.toLowerCase() });
+            };
+
             const handleSend = async () => {
                 if (!students.trim()) return addToast('error', 'Erro', "Preencha o nickname do(s) aluno(s).");
                 if (!materialType) return addToast('error', 'Erro', "Nenhum material configurado para envio.");
@@ -1152,7 +1267,6 @@
                 const studentList = students.split('/').map(s => s.trim()).filter(s => s.length > 0);
                 if (studentList.length === 0) return;
 
-                // Definir a TAG alvo com base na seleção do utilizador
                 let targetTag = '';
                 if (selectedType.id === 'admin') {
                     targetTag = materialType === 'Apostila' ? 'ADM' : 'ADMAtv';
@@ -1164,7 +1278,6 @@
                     targetTag = 'PML';
                 }
 
-                // Encontrar o template correspondente na folha de cálculo procurando pela TAG exata
                 const template = templates.find(t => t.tag.toUpperCase() === targetTag.toUpperCase());
 
                 if (!template) {
@@ -1178,11 +1291,9 @@
                 let failedNicks = [];
                 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
-                // O script devolve o Título (coluna B) e o BBCode (coluna C) de acordo com a nova estrutura
                 let subject = template.titulo;
                 let messageBody = template.bbcode;
                 
-                // Substituir placeholders dinâmicos (caso exista {PROFESSOR} na planilha)
                 messageBody = messageBody.replace(/\{PROFESSOR\}/gi, professor.nickname);
 
                 try {
@@ -1250,10 +1361,9 @@
                                                         type="button"
                                                         onClick={(e) => {
                                                             e.preventDefault();
-                                                            setSelectedType(t);
-                                                            setIsDropdownOpen(false);
+                                                            handleTypeSelect(t);
                                                         }}
-                                                        className={`block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 text-[11px] sm:text-xs md:text-sm font-bold uppercase cursor-pointer transition-colors hover:underline ${
+                                                        className={`block w-full text-left px-3 sm:px-4 py-2.5 sm:py-3 text-[11px] sm:text-xs md:text-sm font-bold uppercase cursor-pointer transition-colors ${
                                                             selectedType.id === t.id 
                                                                 ? 'bg-brand/10 text-brand dark:bg-brand/20 dark:text-brand-light' 
                                                                 : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-brand dark:hover:text-brand-light'
@@ -1273,14 +1383,14 @@
                                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-center sm:justify-start gap-4 sm:gap-6 h-auto sm:h-12 md:h-14 py-3 sm:py-0 px-3 sm:px-4 bg-white dark:bg-black/20 border border-slate-200 dark:border-brand/20 rounded-md">
                                             <button 
                                                 type="button" 
-                                                onClick={(e) => { e.preventDefault(); setMaterialType('Apostila'); }} 
+                                                onClick={(e) => { e.preventDefault(); handleSetMaterialType('Apostila'); }} 
                                                 className={`px-3 py-1.5 rounded-md text-[11px] sm:text-xs font-bold uppercase transition-all ${materialType === 'Apostila' ? 'bg-brand/20 text-brand dark:bg-brand/30 dark:text-brand-light' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'}`}
                                             >
                                                 Apostila
                                             </button>
                                             <button 
                                                 type="button" 
-                                                onClick={(e) => { e.preventDefault(); setMaterialType('Atividade'); }} 
+                                                onClick={(e) => { e.preventDefault(); handleSetMaterialType('Atividade'); }} 
                                                 className={`px-3 py-1.5 rounded-md text-[11px] sm:text-xs font-bold uppercase transition-all ${materialType === 'Atividade' ? 'bg-brand/20 text-brand dark:bg-brand/30 dark:text-brand-light' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-white/5'}`}
                                             >
                                                 Atividade
@@ -1365,6 +1475,9 @@
         };
 
         const App = () => {
+            const { searchParams, updateParams } = useQueryParams();
+            const currentView = searchParams.get('pag') || 'formulario';
+
             const [currentUser, setCurrentUser] = useState(() => {
                 const cached = localStorage.getItem('cfo_auth_user');
                 return cached ? JSON.parse(cached) : { nickname: '', role: '' };
@@ -1375,23 +1488,6 @@
             const [reportData, setReportData] = useState(null);
             const [toasts, setToasts] = useState([]);
             const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
-
-            // Hiperligações e Routing com Hashes
-            const [currentView, setCurrentView] = useState(() => {
-                const hash = window.location.hash.replace('#', '');
-                return ['reports', 'correction', 'rectifications', 'mps'].includes(hash) ? hash : 'reports';
-            });
-
-            useEffect(() => {
-                const handleHashChange = () => {
-                    const hash = window.location.hash.replace('#', '');
-                    if (['reports', 'correction', 'rectifications', 'mps'].includes(hash)) {
-                        setCurrentView(hash);
-                    }
-                };
-                window.addEventListener('hashchange', handleHashChange);
-                return () => window.removeEventListener('hashchange', handleHashChange);
-            }, []);
 
             useEffect(() => {
                 const root = document.documentElement;
@@ -1407,12 +1503,9 @@
 
             const removeToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
 
-            // Sistema de Autenticação Segura (Cache Local + Re-validação em Background)
             useEffect(() => {
                 const authenticate = async () => {
                     const forumNick = await getForumUsername();
-                    
-                    // Se não tivermos o nick do fórum via scrape, tentamos usar o do cache local
                     let baseNick = forumNick;
                     if (!baseNick) {
                         const cachedUser = localStorage.getItem('cfo_auth_user');
@@ -1430,18 +1523,13 @@
                         let foundRole = null;
                         let foundNick = baseNick || "Desconhecido";
 
-                        // Verificação em Loop - Linha a Linha na base de dados
                         for (let i = 0; i < data.length; i++) {
                             const row = data[i];
-                            
-                            // 1ª Tentativa: Procura o nickname na Coluna B (índice 1)
                             if (row[1] && row[1].toString().trim().toLowerCase() === nickToSearch) {
                                 foundRole = row[0] ? row[0].toString().trim() : 'Membro';
-                                foundNick = row[1].toString().trim(); // Mantém as maiúsculas originais
+                                foundNick = row[1].toString().trim();
                                 break;
                             }
-                            
-                            // 2ª Tentativa: Procura o nickname na Coluna D (índice 3)
                             if (row[3] && row[3].toString().trim().toLowerCase() === nickToSearch) {
                                 foundRole = row[2] ? row[2].toString().trim() : 'Membro';
                                 foundNick = row[3].toString().trim();
@@ -1454,11 +1542,9 @@
                             setCurrentUser(userObj);
                             setAuthStatus('authorized');
                             
-                            // Salva no "db" (localStorage) para acesso rápido na próxima visita
                             localStorage.setItem('cfo_auth_user', JSON.stringify(userObj));
                             localStorage.setItem('cfo_auth_status', 'authorized');
                         } else {
-                            // SE DEIXOU DE CONSTAR NA BASE DE DADOS: Bloqueia e limpa o cache imediatamente!
                             setCurrentUser({ nickname: baseNick || 'Desconhecido', role: 'Sem Autorização' });
                             setAuthStatus('unauthorized');
                             localStorage.removeItem('cfo_auth_user');
@@ -1467,8 +1553,6 @@
 
                     } catch (error) {
                         console.error("Erro na Autenticação:", error);
-                        // Em caso de erro de rede, se já tínhamos acesso cacheado, mantemos (resiliência). 
-                        // Se não tínhamos, mostramos ecrã de erro.
                         if (localStorage.getItem('cfo_auth_status') !== 'authorized') {
                             setCurrentUser({ nickname: baseNick || 'Desconhecido', role: 'Sem Autorização' });
                             setAuthStatus('error');
@@ -1478,17 +1562,23 @@
                 authenticate();
             }, []);
 
-            // --- ATUALIZAÇÃO 3: Ajuste na passagem das Notas (Sim/Não) para coincidir com a Aprovação ---
             const handleNavigateFromCorrection = (data) => {
                 setReportData({
                     classId: 'admin_activity',
                     startTime: new Date(),
                     studentNick: data.nick,
                     verdict: data.approved ? 'Aprovado' : 'Reprovado',
-                    score: data.approved ? 'Sim' : 'Não', // Define Sim ou Não dinamicamente!
+                    score: data.approved ? 'Sim' : 'Não',
                     comments: data.comments
                 });
-                window.location.hash = 'reports'; // Muda via Hyperlink
+                updateParams({ pag: 'formulario', aula: 'admin' });
+            };
+
+            const handleTabClick = (e, id) => {
+                e.preventDefault();
+                if (authStatus !== 'authorized') return;
+                // Ao trocar a TAB principal, limpa os sub-parâmetros (aula e tipo)
+                updateParams({ pag: id, aula: null, tipo: null });
             };
 
             const isBlocked = authStatus !== 'authorized';
@@ -1500,17 +1590,13 @@
                     <div className="flex-1 w-full max-w-5xl mx-auto p-2 sm:p-4 md:p-8 mt-2 md:mt-6">
                         <div className="bg-white dark:bg-[#121813] rounded-lg border border-slate-200 dark:border-brand/50 border-t-4 border-t-brand p-4 sm:p-6 md:p-10 relative overflow-hidden transition-colors">
                             
-                            {/* Header Interno do Card Flexível */}
                             <div className="flex flex-col gap-4 sm:gap-6 mb-6 md:mb-10 border-b border-slate-100 dark:border-brand/20 pb-6 relative z-10 transition-colors w-full">
                                 
-                                {/* Top Row: Logo and Profile */}
                                 <div className="flex flex-row items-center justify-between w-full">
-                                    {/* Esquerda: Logótipo */}
                                     <div className="shrink-0">
                                         <BrandHeader />
                                     </div>
                                     
-                                    {/* Direita: Botão de Tema e Perfil */}
                                     <div className="flex items-center gap-3 sm:gap-4 shrink-0">
                                         <button 
                                             onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
@@ -1535,20 +1621,20 @@
                                     </div>
                                 </div>
                                 
-                                {/* Bottom Row: Flat Tab Navigation */}
                                 <div className="w-full mt-4 sm:mt-8 border-b-2 border-slate-100 dark:border-white/5">
                                     <div className="max-w-4xl mx-auto flex flex-wrap justify-center sm:justify-start gap-2 sm:gap-8 px-2 sm:px-0">
                                         {[
-                                            { id: 'reports', label: 'Formulário', iconImg: 'https://i.imgur.com/glet2Pt.png' },
-                                            { id: 'correction', label: 'Correção', iconImg: 'https://i.imgur.com/Ru1cipy.png' },
-                                            { id: 'rectifications', label: 'Retificações', iconImg: 'https://i.imgur.com/iVydgE6.png' },
+                                            { id: 'formulario', label: 'Formulário', iconImg: 'https://i.imgur.com/glet2Pt.png' },
+                                            { id: 'correcao', label: 'Correção', iconImg: 'https://i.imgur.com/Ru1cipy.png' },
+                                            { id: 'retificacoes', label: 'Retificações', iconImg: 'https://i.imgur.com/iVydgE6.png' },
                                             { id: 'mps', label: 'MPs', iconImg: 'https://i.imgur.com/sYgWq8k.png' }
                                         ].map(item => {
                                             const isActive = currentView === item.id && !isBlocked;
                                             return (
                                                 <a
                                                     key={item.id}
-                                                    href={isBlocked ? undefined : `#${item.id}`}
+                                                    href={`?pag=${item.id}`}
+                                                    onClick={(e) => handleTabClick(e, item.id)}
                                                     className={`group relative flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 sm:py-4 text-[10px] sm:text-[11px] font-bold uppercase tracking-widest transition-colors
                                                         ${isBlocked ? 'opacity-40 cursor-not-allowed pointer-events-none' : ''}
                                                         ${isActive
@@ -1565,12 +1651,10 @@
                                                     />
                                                     <span className="truncate">{item.label}</span>
                                                     
-                                                    {/* Tab Indicator */}
                                                     {isActive && (
                                                         <span className="absolute bottom-[-2px] left-0 w-full h-1 bg-brand dark:bg-brand rounded-t-md"></span>
                                                     )}
                                                     
-                                                    {/* Hover Indicator (subtle) */}
                                                     {!isActive && !isBlocked && (
                                                         <span className="absolute bottom-[-2px] left-0 w-full h-1 bg-slate-200 dark:bg-white/10 rounded-t-md scale-x-0 group-hover:scale-x-100 transition-transform origin-left"></span>
                                                     )}
@@ -1581,7 +1665,6 @@
                                 </div>
                             </div>
 
-                            {/* Conteúdo Dinâmico */}
                             <div className="relative z-10 min-h-[300px] flex flex-col justify-center">
                                 {authStatus === 'loading' && (
                                     <div className="py-20 flex flex-col items-center justify-center text-slate-400">
@@ -1615,9 +1698,11 @@
                                     </div>
                                 )}
 
-                                {authStatus === 'authorized' && currentView === 'reports' && (
+                                {authStatus === 'authorized' && currentView === 'formulario' && (
                                     <ClassFeedbackForm
                                         professor={currentUser}
+                                        searchParams={searchParams}
+                                        updateParams={updateParams}
                                         initialClassId={reportData?.classId}
                                         initialStartTime={reportData?.startTime}
                                         initialStudent={reportData?.studentNick}
@@ -1628,7 +1713,7 @@
                                     />
                                 )}
 
-                                {authStatus === 'authorized' && currentView === 'correction' && (
+                                {authStatus === 'authorized' && currentView === 'correcao' && (
                                     <CorrectionTool
                                         currentUser={currentUser}
                                         onNavigateToReport={handleNavigateFromCorrection}
@@ -1636,9 +1721,11 @@
                                     />
                                 )}
 
-                                {authStatus === 'authorized' && currentView === 'rectifications' && (
+                                {authStatus === 'authorized' && currentView === 'retificacoes' && (
                                     <RectificationForm
                                         professor={currentUser}
+                                        searchParams={searchParams}
+                                        updateParams={updateParams}
                                         addToast={addToast}
                                     />
                                 )}
@@ -1646,6 +1733,8 @@
                                 {authStatus === 'authorized' && currentView === 'mps' && (
                                     <MpSenderForm
                                         professor={currentUser}
+                                        searchParams={searchParams}
+                                        updateParams={updateParams}
                                         addToast={addToast}
                                     />
                                 )}
