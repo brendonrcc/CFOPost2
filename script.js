@@ -1,4 +1,4 @@
-   const { useState, useEffect, useMemo, useRef } = React;
+  const { useState, useEffect, useMemo, useRef } = React;
 
         const kebabToPascal = (str) =>
             str.replace(/-([a-z0-9])/g, (g) => g[1].toUpperCase())
@@ -49,8 +49,8 @@
         // --- CONSTANTS ---
         const MACRO_URL = "https://script.google.com/macros/s/AKfycbx5Go-UGIcQvyA3vefhhl5Rc6-930cG9LsCRb1JPKzTHN5dNfBUCsD063K5RCyANGplEA/exec";
         
-        // NOVO URL CONFIGURADO PARA RETIFICAÇÕES (ATENÇÃO: Substitua isto pela sua nova URL Web App gerada no Google Apps Script para a planilha 1Xusp1uIBzAgEikHAMVH1L8S5XbNHXskmohCnw4TZbRw):
-        const MACRO_RETIFICACAO_URL = "https://script.google.com/macros/s/AKfycbxQ2j9RCT2c4LNs0pYRxMJoEu_m-rw_zfG-15Q15qt4KQ9fxdyrvxp5gXbdONUmFoeAqg/exec";
+        // NOVO URL CONFIGURADO PARA RETIFICAÇÕES:
+        const MACRO_RETIFICACAO_URL = "https://script.google.com/macros/s/AKfycbws75bTiRFQqY3aGuGqT0i-YeP5tvWb4_3KWd5yQzSivALNSOQhRxGKO_wmEMro3yB_EQ/exec";
         
         const MACRO_GET_MPS_URL = "https://api-professor-dashboard.brendonhbrcc.workers.dev/?gid=2116872062";
         const MACRO_AUTH_URL = "https://api-professor-dashboard.brendonhbrcc.workers.dev/?gid=1512246214";
@@ -265,8 +265,14 @@
                     body: JSON.stringify(body)
                 });
                 
+                const result = await response.json();
+                if (result.status === 'error') {
+                    throw new Error(result.message);
+                }
+                
                 return true; 
             } catch (error) {
+                console.error("Erro ao processar Retificação:", error);
                 throw error;
             }
         };
