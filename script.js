@@ -1,4 +1,4 @@
-  const { useState, useEffect, useMemo, useRef } = React;
+ const { useState, useEffect, useMemo, useRef } = React;
 
         const kebabToPascal = (str) =>
             str.replace(/-([a-z0-9])/g, (g) => g[1].toUpperCase())
@@ -421,7 +421,7 @@
 
                         return {
                             "Carimbo de data/hora": now.toLocaleString('pt-BR'),
-                            "Início": startTime.toLocaleString('pt-BR'),
+                            "Início": isAdminActivity ? "-" : startTime.toLocaleString('pt-BR'),
                             "Aula aplicada": selectedType.name,
                             "Tipo": isAdminActivity ? "Atividade" : "Aula",
                             "Professor(a)": professor.nickname,
@@ -560,10 +560,12 @@
                                     )}
                                 </div>
 
-                                <div className="space-y-2 sm:space-y-3">
-                                    <label htmlFor="data-inicio" className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block cursor-pointer">Horário de Início</label>
-                                    <input id="data-inicio" type="datetime-local" value={formatDateTimeForInput(startTime)} onChange={(e) => setStartTime(new Date(e.target.value))} className="w-full h-10 sm:h-12 md:h-14 px-3 sm:px-4 bg-white dark:bg-black/20 border border-slate-200 dark:border-brand/20 rounded-md text-xs sm:text-sm font-bold text-slate-700 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all uppercase cursor-pointer" />
-                                </div>
+                                {!isAdminActivity && (
+                                    <div className="space-y-2 sm:space-y-3">
+                                        <label htmlFor="data-inicio" className="text-[10px] sm:text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest block cursor-pointer">Horário de Início</label>
+                                        <input id="data-inicio" type="datetime-local" value={formatDateTimeForInput(startTime)} onChange={(e) => setStartTime(new Date(e.target.value))} className="w-full h-10 sm:h-12 md:h-14 px-3 sm:px-4 bg-white dark:bg-black/20 border border-slate-200 dark:border-brand/20 rounded-md text-xs sm:text-sm font-bold text-slate-700 dark:text-white focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-all uppercase cursor-pointer" />
+                                    </div>
+                                )}
                             </div>
 
                             <div className="space-y-2 sm:space-y-3">
